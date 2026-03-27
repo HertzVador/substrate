@@ -513,18 +513,28 @@ class SubstrateApp(tk.Tk):
         self.after(100, self._show_settings)
 
     def _build_ui(self):
-        toolbar = tk.Frame(self, bg="#2d2d2d", pady=4)
+        toolbar = tk.Frame(self, bg="#2d2d2d", pady=6)
         toolbar.pack(fill="x")
 
-        bkw = dict(bg="#444", fg="white", relief="flat", padx=10, pady=4,
-                   cursor="hand2", activebackground="#666", activeforeground="white")
-        tk.Button(toolbar, text="⚙  Settings", command=self._show_settings, **bkw).pack(side="left", padx=4)
-        tk.Button(toolbar, text="⏹  Stop",     command=self._stop,           **bkw).pack(side="left", padx=4)
-        tk.Button(toolbar, text="💾  Save PNG", command=self._save,           **bkw).pack(side="left", padx=4)
-        tk.Label(toolbar,
-                 text="⚡ numba" if NUMBA else "🐢 python",
-                 bg="#2d2d2d", fg="#7fc" if NUMBA else "#fa8",
-                 padx=8).pack(side="right")
+        # ttk style so macOS actually respects the colors
+        style = ttk.Style()
+        style.configure("Toolbar.TButton",
+                         font=("Helvetica", 12),
+                         padding=(10, 5))
+
+        ttk.Button(toolbar, text="⚙  Settings", style="Toolbar.TButton",
+                   command=self._show_settings).pack(side="left", padx=6, pady=2)
+        ttk.Button(toolbar, text="⏹  Stop",     style="Toolbar.TButton",
+                   command=self._stop).pack(side="left", padx=4, pady=2)
+        ttk.Button(toolbar, text="💾  Save PNG", style="Toolbar.TButton",
+                   command=self._save).pack(side="left", padx=4, pady=2)
+
+        badge_bg  = "#1a6b2a" if NUMBA else "#7a3a00"
+        badge_txt = "⚡ numba" if NUMBA else "🐢 python"
+        tk.Label(toolbar, text=badge_txt,
+                 bg=badge_bg, fg="white",
+                 font=("Helvetica", 11, "bold"),
+                 padx=10, pady=4).pack(side="right", padx=8)
 
         self.status_var = tk.StringVar(value="Configure settings to begin.")
         tk.Label(self, textvariable=self.status_var,
