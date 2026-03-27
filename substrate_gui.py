@@ -439,49 +439,97 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(f, text=f"Engine: {accel}",
                   foreground="#080" if NUMBA else "#a00").grid(row=1, column=0, columnspan=2, pady=(0,10))
 
+        # --- Canvas size preset + manual ---
+        SIZE_PRESETS = {
+            "1080p  (1920×1080)": (1920, 1080),
+            "4K     (3840×2160)": (3840, 2160),
+            "Square (800×800)":   (800,  800),
+            "Manual":             None,
+        }
+        ttk.Label(f, text="Canvas size:").grid(row=2, column=0, sticky="e", **pad)
+        self.size_preset = tk.StringVar(value="Square (800×800)")
+        size_cb = ttk.Combobox(f, textvariable=self.size_preset,
+                               values=list(SIZE_PRESETS.keys()),
+                               state="readonly", width=20)
+        size_cb.grid(row=2, column=1, sticky="w", padx=10, pady=6)
+
+        # manual W/H entries (shown only when Manual is selected)
+        manual_frame = ttk.Frame(f)
+        manual_frame.grid(row=3, column=0, columnspan=2, pady=0)
+        ttk.Label(manual_frame, text="Width:").pack(side="left", padx=(10,2))
+        self.width_var = tk.StringVar(value="800")
+        self._w_entry = ttk.Entry(manual_frame, textvariable=self.width_var, width=7)
+        self._w_entry.pack(side="left")
+        ttk.Label(manual_frame, text="Height:").pack(side="left", padx=(10,2))
+        self.height_var = tk.StringVar(value="800")
+        self._h_entry = ttk.Entry(manual_frame, textvariable=self.height_var, width=7)
+        self._h_entry.pack(side="left")
+
+        def on_preset_change(*_):
+            preset = self.size_preset.get()
+            wh = SIZE_PRESETS.get(preset)
+            if wh:
+                self.width_var.set(str(wh[0]))
+                self.height_var.set(str(wh[1]))
+                self._w_entry.config(state="disabled")
+                self._h_entry.config(state="disabled")
+            else:
+                self._w_entry.config(state="normal")
+                self._h_entry.config(state="normal")
+
+        self.size_preset.trace_add("write", on_preset_change)
+        on_preset_change()   # apply initial state
+
+        # --- Other fields ---
         fields = [
-            ("Width",                 "width",  "800"),
-            ("Height",                "height", "800"),
             ("Cracks",                "cracks", "100"),
             ("Steps",                 "steps",  "500000"),
             ("Seed (blank = random)", "seed",   ""),
         ]
         self.vars = {}
-        for i, (label, key, default) in enumerate(fields, start=2):
+        for i, (label, key, default) in enumerate(fields, start=4):
             ttk.Label(f, text=label + ":").grid(row=i, column=0, sticky="e", **pad)
             v = tk.StringVar(value=default)
             ttk.Entry(f, textvariable=v, width=14).grid(row=i, column=1, sticky="w", **pad)
             self.vars[key] = v
 
-        # Fill % slider
-        fill_row = len(fields) + 2
-        ttk.Label(f, text="Stop at fill %:").grid(row=fill_row, column=0, sticky="e", **pad)
-        fill_frame = ttk.Frame(f)
-        fill_frame.grid(row=fill_row, column=1, sticky="w", padx=10)
-        self.fill_var = tk.IntVar(value=95)
-        self.fill_label = ttk.Label(fill_frame, text="95%", width=5)
-        self.fill_label.pack(side="right")
-        fill_slider = ttk.Scale(fill_frame, from_=10, to=100, orient="horizontal",
-                                variable=self.fill_var, length=120,
-                                command=lambda v: self.fill_label.config(
-                                    text=f"{int(float(v))}%"))
-        fill_slider.pack(side="left")
+        base_row = 4 + len(fields)
 
-        ttk.Label(f, text="Preview refresh (ms):").grid(
-            row=fill_row+1, column=0, sticky="e", **pad)
+        # --- Fill % slider ---
+        ttk.Label(f, text="Stop at fill %:").grid(row=base_row, column=0, sticky="e", **pad)
+        fill_frame = ttk.Frame(f)
+        fill_frame.grid(row=base_row, column=1, sticky="w", padx=10)
+        self.fill_var = tk.IntVar(value=30)
+        self.fill_label = ttk.Label(fill_frame, text="30%", width=5)
+        self.fill_label.pack(side="right")
+        ttk.Scale(fill_frame, from_=10, to=100, orient="horizontal",
+                  variable=self.fill_var, length=120,
+                  command=lambda v: self.fill_label.config(
+                      text=f"{int(float(v))}%")).pack(side="left")
+
+        # --- Output format ---
+        ttk.Label(f, text="Output format:").grid(row=base_row+1, column=0, sticky="e", **pad)
+        self.fmt_var = tk.StringVar(value="PNG")
+        fmt_frame = ttk.Frame(f)
+        fmt_frame.grid(row=base_row+1, column=1, sticky="w", padx=10)
+        ttk.Radiobutton(fmt_frame, text="PNG",  variable=self.fmt_var, value="PNG").pack(side="left")
+        ttk.Radiobutton(fmt_frame, text="JPEG", variable=self.fmt_var, value="JPEG").pack(side="left", padx=8)
+
+        # --- Preview refresh ---
+        ttk.Label(f, text="Preview refresh (ms):").grid(row=base_row+2, column=0, sticky="e", **pad)
         self.refresh_var = tk.StringVar(value="150")
         ttk.Entry(f, textvariable=self.refresh_var, width=14).grid(
-            row=fill_row+1, column=1, sticky="w", **pad)
+            row=base_row+2, column=1, sticky="w", **pad)
 
         btn = ttk.Frame(f)
-        btn.grid(row=len(fields)+5, column=0, columnspan=2, pady=(12,0))
+        btn.grid(row=base_row+3, column=0, columnspan=2, pady=(12,0))
         ttk.Button(btn, text="Generate", command=self._ok).pack(side="left", padx=6)
         ttk.Button(btn, text="Cancel",   command=self.destroy).pack(side="left", padx=6)
 
     def _ok(self):
         try:
-            w       = int(self.vars["width"].get())
-            h       = int(self.vars["height"].get())
+            w       = int(self.width_var.get())
+            h       = int(self.height_var.get())
             c       = int(self.vars["cracks"].get())
             s       = int(self.vars["steps"].get())
             seed_s  = self.vars["seed"].get().strip()
@@ -493,7 +541,8 @@ class SettingsDialog(tk.Toplevel):
             return
         self.result = dict(width=w, height=h, cracks=c, steps=s,
                            seed=seed, refresh=refresh,
-                           fill_pct=int(self.fill_var.get()))
+                           fill_pct=int(self.fill_var.get()),
+                           fmt=self.fmt_var.get())
         self.destroy()
 
 
@@ -633,12 +682,18 @@ class SubstrateApp(tk.Tk):
         if self.engine is None:
             messagebox.showinfo("Nothing to save", "Run a simulation first.")
             return
+        fmt = self.params.get("fmt", "PNG") if self.params else "PNG"
+        ext = ".jpg" if fmt == "JPEG" else ".png"
+        default_name = f"substrate{ext}"
+        filetypes = [("JPEG image", "*.jpg")] if fmt == "JPEG" else [("PNG image", "*.png")]
         path = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("PNG image", "*.png"), ("JPEG image", "*.jpg")],
-            initialfile="substrate.png")
+            defaultextension=ext,
+            filetypes=filetypes + [("All files", "*.*")],
+            initialfile=default_name)
         if path:
-            self.engine.get_image().save(path)
+            img = self.engine.get_image()
+            save_kw = {"quality": 95, "optimize": True} if fmt == "JPEG" else {}
+            img.save(path, format=fmt, **save_kw)
             self.status_var.set(f"Saved → {path}")
 
     def on_close(self):
