@@ -3,5 +3,7 @@ __pycache__/
 *.pyo
 *.nbc
 *.nbi
-*.png
 *.jpg
+# ignore generated output images but keep the repo preview
+*.png
+!preview.png

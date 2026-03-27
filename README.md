@@ -1,5 +1,7 @@
 # Substrate
 
+![Substrate preview](preview.png)
+
 A Python generative art tool inspired by [Jared Tarbell's *Substrate* (2004)](http://www.complexification.net/gallery/machines/substrate/) from complexification.net.
 
 Cracks grow across a canvas, branching perpendicularly off one another and filling enclosed regions with soft watercolor-like sand. The result is an organic, tile-like structure that emerges from a handful of simple rules.
