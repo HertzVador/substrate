@@ -1,5 +1,7 @@
 # Substrate
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ![Substrate preview](preview.png)
 
 A Python generative art tool inspired by [Jared Tarbell's *Substrate* (2004)](http://www.complexification.net/gallery/machines/substrate/) from complexification.net.
