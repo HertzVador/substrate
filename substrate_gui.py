@@ -45,7 +45,7 @@ PALETTE_NB = np.array([
 ], dtype=np.float64)
 
 PAL_LEN = len(PALETTE_NB)
-MAX_CRACKS = 512
+MAX_CRACKS = 2048   # enough for 4K with scaling
 
 # ---------------------------------------------------------------------------
 # Numba JIT inner loop
@@ -717,9 +717,22 @@ class SubstrateApp(tk.Tk):
         self.status_var.set("Compiling JIT…" if NUMBA else "Starting…")
         self.update_idletasks()
 
-        self.engine = SubstrateEngine(p["width"], p["height"], p["cracks"],
+        # Scale parameters to canvas size.
+        # All user-facing values are tuned for 800×800 (640k px).
+        # For larger canvases we scale proportionally so density looks the same.
+        BASE_AREA = 800 * 800
+        area = p["width"] * p["height"]
+        scale = area / BASE_AREA          # e.g. 1080p ≈ 2.6×, 4K ≈ 10.4×
+
+        scaled_cracks         = max(1,  int(round(p["cracks"]         * scale)))
+        scaled_steps          = max(1,  int(round(p["steps"]          * scale)))
+        scaled_initial_cracks = max(1,  int(round(p["initial_cracks"] * scale)))
+        scaled_seeds          = max(1,  int(round(p["num_seeds"]      * scale)))
+
+        self.engine = SubstrateEngine(p["width"], p["height"],
+                                      scaled_cracks,
                                       p["seed"], p["fill_pct"],
-                                      p["initial_cracks"], p["num_seeds"],
+                                      scaled_initial_cracks, scaled_seeds,
                                       p["vsync"])
         self.progress["value"] = 0
 
@@ -729,7 +742,7 @@ class SubstrateApp(tk.Tk):
 
         self.status_var.set(
             f"Running  {p['width']}×{p['height']}  "
-            f"cracks={p['cracks']}  stop={p['fill_pct']}% fill"
+            f"cracks={scaled_cracks}  stop={p['fill_pct']}% fill"
             + ("  🎞 vsync" if p["vsync"] else "")
             + ("  ⚡" if NUMBA else ""))
 
