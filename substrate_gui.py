@@ -299,7 +299,7 @@ class SubstrateEngine:
     BATCH = 500
 
     def __init__(self, width, height, num_cracks, seed=None, fill_pct=95,
-                 initial_cracks=3, num_seeds=16):
+                 initial_cracks=3, num_seeds=16, vsync=False):
         self.W = width
         self.H = height
         self.num_cracks    = min(num_cracks, MAX_CRACKS)
@@ -308,6 +308,9 @@ class SubstrateEngine:
         self.running = False
         self.lock = threading.Lock()
         self.fill_pct = max(1, min(100, fill_pct)) / 100.0
+        self.vsync = vsync
+        self._frame_consumed = threading.Event()
+        self._frame_consumed.set()   # allow first batch immediately
 
         rng_seed = seed if seed is not None else random.randint(0, 2**31)
         self.rng = np.random.default_rng(rng_seed)
@@ -373,7 +376,8 @@ class SubstrateEngine:
 
     def run(self, steps, progress_cb=None):
         self.running = True
-        batch = self.BATCH
+        # vsync mode: small batches so each frame shows fine detail
+        batch = 20 if self.vsync else self.BATCH
 
         if NUMBA:
             _run_batch(self.canvas, self.cgrid, self.W, self.H,
@@ -382,12 +386,16 @@ class SubstrateEngine:
                        self.alive, 1, self.num_cracks)
 
         while self.step < steps and self.running:
+
+            # vsync: wait until the GUI has consumed the last frame
+            if self.vsync:
+                self._frame_consumed.wait()
+                self._frame_consumed.clear()
+
             with self.lock:
                 if NUMBA:
-                    # gradually activate more cracks as the grid fills
                     active = int(np.sum(self.alive[:self.num_cracks]))
                     filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
-                    # ramp: at 0% fill → initial_cracks, at 50% fill → num_cracks
                     target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
                                  * min(1.0, filled_ratio / 0.5))
                     for ci in range(self.num_cracks):
@@ -410,7 +418,6 @@ class SubstrateEngine:
                         self.step = steps
                         break
                 else:
-                    # gradually add cracks for pure-python path too
                     filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
                     target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
                                  * min(1.0, filled_ratio / 0.5))
@@ -434,6 +441,11 @@ class SubstrateEngine:
 
     def stop(self):
         self.running = False
+        self._frame_consumed.set()   # unblock vsync wait so thread can exit
+
+    def notify_frame_consumed(self):
+        """Called by GUI after each preview refresh when vsync is on."""
+        self._frame_consumed.set()
 
     def get_image(self):
         with self.lock:
@@ -601,6 +613,19 @@ class SettingsDialog(tk.Toplevel):
                   foreground="#555", justify="left").grid(
             row=6, column=0, columnspan=2, padx=10, pady=(6,0))
 
+        # vsync toggle
+        ttk.Separator(t2, orient="horizontal").grid(
+            row=7, column=0, columnspan=2, sticky="ew", pady=10)
+        self.vsync_var = tk.BooleanVar(value=False)
+        vsync_cb = ttk.Checkbutton(t2, text="Slow-motion mode (vsync)",
+                                   variable=self.vsync_var)
+        vsync_cb.grid(row=8, column=0, columnspan=2, sticky="w", padx=10)
+        ttk.Label(t2,
+                  text="Locks simulation speed to the preview refresh rate.\n"
+                       "Great for watching the construction step by step.",
+                  foreground="#555", justify="left").grid(
+            row=9, column=0, columnspan=2, padx=10, pady=(2, 0))
+
         # ── Buttons ───────────────────────────────────────────────────────
         btn = ttk.Frame(self)
         btn.pack(pady=12)
@@ -625,7 +650,8 @@ class SettingsDialog(tk.Toplevel):
                            fill_pct=int(self.fill_var.get()),
                            fmt=self.fmt_var.get(),
                            initial_cracks=int(self.ic_var.get()),
-                           num_seeds=int(self.gs_var.get()))
+                           num_seeds=int(self.gs_var.get()),
+                           vsync=self.vsync_var.get())
         self.destroy()
 
 
@@ -693,7 +719,8 @@ class SubstrateApp(tk.Tk):
 
         self.engine = SubstrateEngine(p["width"], p["height"], p["cracks"],
                                       p["seed"], p["fill_pct"],
-                                      p["initial_cracks"], p["num_seeds"])
+                                      p["initial_cracks"], p["num_seeds"],
+                                      p["vsync"])
         self.progress["value"] = 0
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
@@ -702,8 +729,8 @@ class SubstrateApp(tk.Tk):
 
         self.status_var.set(
             f"Running  {p['width']}×{p['height']}  "
-            f"cracks={p['cracks']}  steps={p['steps']:,}  "
-            f"stop={p['fill_pct']}% fill"
+            f"cracks={p['cracks']}  stop={p['fill_pct']}% fill"
+            + ("  🎞 vsync" if p["vsync"] else "")
             + ("  ⚡" if NUMBA else ""))
 
         threading.Thread(
@@ -754,6 +781,10 @@ class SubstrateApp(tk.Tk):
         else:
             self.status_var.set("Done. Use 💾 Save PNG to export.")
             self.progress["value"] = 100
+
+        # signal vsync — let simulation thread render the next batch
+        if self.engine:
+            self.engine.notify_frame_consumed()
 
     def _stop(self):
         if self.engine:
