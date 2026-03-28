@@ -394,33 +394,35 @@ class SubstrateEngine:
 
             with self.lock:
                 if NUMBA:
-                    active = int(np.sum(self.alive[:self.num_cracks]))
-                    filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
-                    target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
-                                 * min(1.0, (filled_ratio / 0.8) ** 2))
-                    for ci in range(self.num_cracks):
-                        if active >= target:
-                            break
-                        if not self.alive[ci]:
-                            self.alive[ci] = 1
-                            self._py_find_start(ci)
-                            active += 1
-
                     self.alive = _run_batch(
                         self.canvas, self.cgrid, self.W, self.H,
                         self.crack_x, self.crack_y, self.crack_t,
                         self.sand_c, self.sand_g, self.rng_state,
                         self.alive, batch, self.num_cracks)
 
-                    filled = np.sum(self.cgrid < 10000)
+                    # use visual fill (non-white pixels) — cgrid only marks
+                    # crack lines, not the sand regions between them
+                    visual_filled = np.sum(np.any(self.canvas < 240, axis=2))
+                    visual_ratio  = visual_filled / (self.W * self.H)
+
+                    # ramp crack count based on visual fill
+                    target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
+                                 * min(1.0, (visual_ratio / 0.8) ** 2))
+                    for ci in range(self.num_cracks):
+                        if int(np.sum(self.alive[:self.num_cracks])) >= target:
+                            break
+                        if not self.alive[ci]:
+                            self.alive[ci] = 1
+                            self._py_find_start(ci)
+
                     if (not np.any(self.alive[:self.num_cracks])
-                            or filled > self.W * self.H * self.fill_pct):
+                            or visual_ratio > self.fill_pct):
                         self.step = steps
                         break
                 else:
-                    filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
+                    visual_ratio = np.sum(np.any(self.canvas < 240, axis=2)) / (self.W * self.H)
                     target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
-                                 * min(1.0, (filled_ratio / 0.8) ** 2))
+                                 * min(1.0, (visual_ratio / 0.8) ** 2))
                     while len(self.cracks) < target:
                         self.cracks.append(_Crack(self.W, self.H, self.cgrid, self.rng))
 
@@ -429,7 +431,7 @@ class SubstrateEngine:
                         if crack.alive:
                             crack.move(self.canvas)
                             alive_count += crack.alive
-                    if alive_count == 0:
+                    if alive_count == 0 or visual_ratio > self.fill_pct:
                         self.step = steps
                         break
                 self.step += batch
