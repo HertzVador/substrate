@@ -257,8 +257,10 @@ def _run_batch(canvas, cgrid, W, H,
                 # - scores each by distance to origin (closer = better)
                 # - BUT enforces a minimum spread distance so cracks
                 #   don't pile up in one pixel near the origin
-                # - bias=0 → pick first valid candidate (uniform)
-                n_candidates = 1 + int(origin_bias * 39.0)
+                # n_candidates scales 0%→1 candidate, 100%→20 candidates
+                # origin_bias is in 0-0.04 range, normalize to 0-1 first
+                bias_norm = origin_bias / 0.04
+                n_candidates = 1 + int(bias_norm * 19.0)
 
                 # minimum restart distance: at least 5% of canvas diagonal
                 min_spread_sq = (0.05 * math.sqrt(float(W*W + H*H))) ** 2
