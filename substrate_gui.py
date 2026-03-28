@@ -397,7 +397,7 @@ class SubstrateEngine:
                     active = int(np.sum(self.alive[:self.num_cracks]))
                     filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
                     target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
-                                 * min(1.0, filled_ratio / 0.5))
+                                 * min(1.0, (filled_ratio / 0.8) ** 2))
                     for ci in range(self.num_cracks):
                         if active >= target:
                             break
@@ -420,7 +420,7 @@ class SubstrateEngine:
                 else:
                     filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
                     target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
-                                 * min(1.0, filled_ratio / 0.5))
+                                 * min(1.0, (filled_ratio / 0.8) ** 2))
                     while len(self.cracks) < target:
                         self.cracks.append(_Crack(self.W, self.H, self.cgrid, self.rng))
 
