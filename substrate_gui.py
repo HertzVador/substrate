@@ -814,11 +814,11 @@ class SettingsDialog(tk.Toplevel):
         self.ob_var = tk.DoubleVar(value=0.0)
         self.ob_label = ttk.Label(ob_frame, text="0%", width=5)
         self.ob_label.pack(side="right")
-        ttk.Scale(ob_frame, from_=0.0, to=0.6, orient="horizontal",
+        ttk.Scale(ob_frame, from_=0.0, to=100.0, orient="horizontal",
                   variable=self.ob_var, length=140,
                   command=lambda v: self.ob_label.config(
-                      text=f"{int(float(v)*100)}%")).pack(side="left")
-        ttk.Label(t3, text="0% = uniform spread,  60% = strong pull to origin",
+                      text=f"{int(float(v))}%")).pack(side="left")
+        ttk.Label(t3, text="0% = uniform spread,  100% = strong pull to origin",
                   foreground="#777").grid(row=5, column=0, columnspan=2, padx=10, pady=(0,8))
 
         # Quick position presets
@@ -894,7 +894,7 @@ class SettingsDialog(tk.Toplevel):
                            vsync=self.vsync_var.get(),
                            origin_x=round(self.ox_var.get(), 3),
                            origin_y=round(self.oy_var.get(), 3),
-                           origin_bias=round(self.ob_var.get(), 3),
+                           origin_bias=round(self.ob_var.get() / 100.0 * 0.04, 5),
                            palette_idx=PALETTE_NAMES.index(self.palette_var.get()))
         self.destroy()
 
