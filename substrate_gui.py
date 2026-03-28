@@ -257,13 +257,7 @@ def _run_batch(canvas, cgrid, W, H,
                 # - scores each by distance to origin (closer = better)
                 # - BUT enforces a minimum spread distance so cracks
                 #   don't pile up in one pixel near the origin
-                # n_candidates scales 0%→1 candidate, 100%→20 candidates
-                bias_norm = origin_bias / 0.04
-                n_candidates = 1 + int(bias_norm * 19.0)
-
-                # canvas diagonal squared for normalisation
-                canvas_diag_sq = float(W*W + H*H)
-
+                # restart: uniform random search (bias handled via seed placement)
                 for _t in range(200):
                     s = (s * M1 + M2) & MASK
                     v = float(s >> np.uint64(33)) / 2147483648.0
@@ -274,23 +268,10 @@ def _run_batch(canvas, cgrid, W, H,
                     fpy = int(v * H)
                     if fpy >= H: fpy = H - 1
                     if cgrid[fpy * W + fpx] < 10000:
-                        dx = float(fpx) - origin_x
-                        dy = float(fpy) - origin_y
-                        # normalised distance 0-1
-                        dist = (dx*dx + dy*dy) / canvas_diag_sq
-                        # weighted reservoir: accept this candidate with
-                        # probability = (1 - dist)^2 * bias_norm
-                        # so closer candidates are preferred but not guaranteed
-                        s = (s * M1 + M2) & MASK
-                        rv = float(s >> np.uint64(33)) / 2147483648.0
-                        weight = (1.0 - dist) * (1.0 - dist) * bias_norm
-                        if not found or rv < weight:
-                            best_fpx = fpx
-                            best_fpy = fpy
                         found = True
-                        n_candidates -= 1
-                        if n_candidates <= 0:
-                            break
+                        best_fpx = fpx
+                        best_fpy = fpy
+                        break
 
                 if not found:
                     alive[ci] = 0
@@ -451,16 +432,19 @@ class SubstrateEngine:
         self.canvas = np.full((height, width, 3), 255, dtype=np.uint8)
         self.cgrid  = np.full(width * height, 10001, dtype=np.int32)
 
-        # seed initial crack directions — clustered near origin when bias > 0
+        # seed initial crack directions
+        # origin_bias controls how tightly seeds cluster around origin:
+        # 0 = uniform random, 1 = tight gaussian cluster at origin
         n_seeds = max(1, min(num_seeds, 256))
         ox_px = self.origin_x
         oy_px = self.origin_y
-        spread = max(width, height) * (1.0 - self.origin_bias * 0.8)
         for _ in range(n_seeds):
             if self.origin_bias > 0:
-                # gaussian cluster around origin
-                x = int(ox_px + self.rng.normal(0, spread * 0.15))
-                y = int(oy_px + self.rng.normal(0, spread * 0.15))
+                # gaussian spread: at bias=1, sigma = 5% of canvas
+                # at bias=0.5, sigma = 27%, at bias=0, full canvas
+                sigma = max(width, height) * (1.0 - self.origin_bias / 0.04 * 0.95)
+                x = int(self.rng.normal(ox_px, sigma * 0.15))
+                y = int(self.rng.normal(oy_px, sigma * 0.15))
                 x = max(0, min(width - 1, x))
                 y = max(0, min(height - 1, y))
             else:
