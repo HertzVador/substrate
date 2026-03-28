@@ -262,8 +262,14 @@ def _run_batch(canvas, cgrid, W, H,
                 bias_norm = origin_bias / 0.04
                 n_candidates = 1 + int(bias_norm * 19.0)
 
-                # minimum restart distance: at least 5% of canvas diagonal
-                min_spread_sq = (0.05 * math.sqrt(float(W*W + H*H))) ** 2
+                # minimum restart distance from current crack (5% diagonal)
+                # AND minimum distance from origin (grows with bias)
+                # so cracks are forced to spread outward, not pile up
+                canvas_diag = math.sqrt(float(W*W + H*H))
+                min_spread_sq   = (0.05 * canvas_diag) ** 2
+                # at high bias, also enforce a min distance FROM origin
+                # so the origin area doesn't get infinitely subdivided
+                min_origin_dist_sq = (bias_norm * 0.15 * canvas_diag) ** 2
 
                 for _t in range(200):
                     s = (s * M1 + M2) & MASK
@@ -279,6 +285,11 @@ def _run_batch(canvas, cgrid, W, H,
                         ddx = float(fpx) - crack_x[ci]
                         ddy = float(fpy) - crack_y[ci]
                         if ddx*ddx + ddy*ddy < min_spread_sq:
+                            continue
+                        # reject if too close to origin (prevents infinite subdivision)
+                        odx = float(fpx) - origin_x
+                        ody = float(fpy) - origin_y
+                        if odx*odx + ody*ody < min_origin_dist_sq:
                             continue
                         dx = float(fpx) - origin_x
                         dy = float(fpy) - origin_y
