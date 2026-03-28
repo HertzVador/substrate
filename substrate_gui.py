@@ -670,8 +670,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(t1, text="Stop at fill %:").grid(row=base, column=0, sticky="e", **pad)
         fill_frame = ttk.Frame(t1)
         fill_frame.grid(row=base, column=1, sticky="w", padx=10)
-        self.fill_var = tk.IntVar(value=30)
-        self.fill_label = ttk.Label(fill_frame, text="30%", width=5)
+        self.fill_var = tk.IntVar(value=70)
+        self.fill_label = ttk.Label(fill_frame, text="70%", width=5)
         self.fill_label.pack(side="right")
         ttk.Scale(fill_frame, from_=10, to=100, orient="horizontal",
                   variable=self.fill_var, length=120,
