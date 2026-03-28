@@ -252,9 +252,16 @@ def _run_batch(canvas, cgrid, W, H,
                 best_fpy = 0
                 best_dist = 1e18
 
-                # number of candidates to compare scales with bias
-                # bias=0 → 1 candidate (uniform), bias=1 → 40 candidates
+                # Biased find_start:
+                # - samples up to 40 candidates
+                # - scores each by distance to origin (closer = better)
+                # - BUT enforces a minimum spread distance so cracks
+                #   don't pile up in one pixel near the origin
+                # - bias=0 → pick first valid candidate (uniform)
                 n_candidates = 1 + int(origin_bias * 39.0)
+
+                # minimum restart distance: at least 5% of canvas diagonal
+                min_spread_sq = (0.05 * math.sqrt(float(W*W + H*H))) ** 2
 
                 for _t in range(200):
                     s = (s * M1 + M2) & MASK
@@ -266,6 +273,11 @@ def _run_batch(canvas, cgrid, W, H,
                     fpy = int(v * H)
                     if fpy >= H: fpy = H - 1
                     if cgrid[fpy * W + fpx] < 10000:
+                        # reject if too close to current crack position
+                        ddx = float(fpx) - crack_x[ci]
+                        ddy = float(fpy) - crack_y[ci]
+                        if ddx*ddx + ddy*ddy < min_spread_sq:
+                            continue
                         dx = float(fpx) - origin_x
                         dy = float(fpy) - origin_y
                         dist = dx*dx + dy*dy
@@ -802,11 +814,11 @@ class SettingsDialog(tk.Toplevel):
         self.ob_var = tk.DoubleVar(value=0.0)
         self.ob_label = ttk.Label(ob_frame, text="0%", width=5)
         self.ob_label.pack(side="right")
-        ttk.Scale(ob_frame, from_=0.0, to=1.0, orient="horizontal",
+        ttk.Scale(ob_frame, from_=0.0, to=0.6, orient="horizontal",
                   variable=self.ob_var, length=140,
                   command=lambda v: self.ob_label.config(
                       text=f"{int(float(v)*100)}%")).pack(side="left")
-        ttk.Label(t3, text="0% = uniform spread,  100% = strong pull to origin",
+        ttk.Label(t3, text="0% = uniform spread,  60% = strong pull to origin",
                   foreground="#777").grid(row=5, column=0, columnspan=2, padx=10, pady=(0,8))
 
         # Quick position presets
