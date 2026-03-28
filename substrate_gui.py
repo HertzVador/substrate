@@ -298,10 +298,12 @@ class _Crack:
 class SubstrateEngine:
     BATCH = 500
 
-    def __init__(self, width, height, num_cracks, seed=None, fill_pct=95):
+    def __init__(self, width, height, num_cracks, seed=None, fill_pct=95,
+                 initial_cracks=3, num_seeds=16):
         self.W = width
         self.H = height
-        self.num_cracks = min(num_cracks, MAX_CRACKS)
+        self.num_cracks    = min(num_cracks, MAX_CRACKS)
+        self.initial_cracks = max(1, min(initial_cracks, num_cracks))
         self.step = 0
         self.running = False
         self.lock = threading.Lock()
@@ -313,8 +315,9 @@ class SubstrateEngine:
         self.canvas = np.full((height, width, 3), 255, dtype=np.uint8)
         self.cgrid  = np.full(width * height, 10001, dtype=np.int32)
 
-        # seed initial crack directions
-        for _ in range(16):
+        # seed initial crack directions — spread across canvas
+        n_seeds = max(1, min(num_seeds, 256))
+        for _ in range(n_seeds):
             x = int(self.rng.integers(0, width))
             y = int(self.rng.integers(0, height))
             self.cgrid[y * width + x] = int(self.rng.integers(0, 360))
@@ -325,17 +328,18 @@ class SubstrateEngine:
             self._init_python()
 
     def _init_numba(self, rng_seed):
-        n = self.num_cracks
         self.crack_x   = np.zeros(MAX_CRACKS, dtype=np.float64)
         self.crack_y   = np.zeros(MAX_CRACKS, dtype=np.float64)
         self.crack_t   = np.zeros(MAX_CRACKS, dtype=np.float64)
         self.sand_c    = np.zeros((MAX_CRACKS, 3), dtype=np.float64)
         self.sand_g    = np.full(MAX_CRACKS, 0.05, dtype=np.float64)
-        self.alive     = np.ones(MAX_CRACKS, dtype=np.int32)
+        # start with only initial_cracks alive; rest start dead
+        self.alive     = np.zeros(MAX_CRACKS, dtype=np.int32)
+        self.alive[:self.initial_cracks] = 1
         self.rng_state = np.array(
             [(rng_seed + i * 2654435761) & 0xFFFFFFFFFFFFFFFF for i in range(MAX_CRACKS)],
             dtype=np.uint64)
-        for ci in range(n):
+        for ci in range(self.initial_cracks):
             self._py_find_start(ci)
 
     def _py_find_start(self, ci):
@@ -362,15 +366,16 @@ class SubstrateEngine:
         self.sand_g[ci] = self.rng.uniform(0.01, 0.1)
 
     def _init_python(self):
+        # start with only initial_cracks; grow to num_cracks gradually
         self.cracks = [_Crack(self.W, self.H, self.cgrid, self.rng)
-                       for _ in range(self.num_cracks)]
+                       for _ in range(self.initial_cracks)]
+        self._active = self.initial_cracks
 
     def run(self, steps, progress_cb=None):
         self.running = True
         batch = self.BATCH
 
         if NUMBA:
-            # warm-up compile (cached after first run)
             _run_batch(self.canvas, self.cgrid, self.W, self.H,
                        self.crack_x, self.crack_y, self.crack_t,
                        self.sand_c, self.sand_g, self.rng_state,
@@ -379,18 +384,39 @@ class SubstrateEngine:
         while self.step < steps and self.running:
             with self.lock:
                 if NUMBA:
+                    # gradually activate more cracks as the grid fills
+                    active = int(np.sum(self.alive[:self.num_cracks]))
+                    filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
+                    # ramp: at 0% fill → initial_cracks, at 50% fill → num_cracks
+                    target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
+                                 * min(1.0, filled_ratio / 0.5))
+                    for ci in range(self.num_cracks):
+                        if active >= target:
+                            break
+                        if not self.alive[ci]:
+                            self.alive[ci] = 1
+                            self._py_find_start(ci)
+                            active += 1
+
                     self.alive = _run_batch(
                         self.canvas, self.cgrid, self.W, self.H,
                         self.crack_x, self.crack_y, self.crack_t,
                         self.sand_c, self.sand_g, self.rng_state,
                         self.alive, batch, self.num_cracks)
-                    # stop when all cracks retired or grid is 95% full
+
                     filled = np.sum(self.cgrid < 10000)
                     if (not np.any(self.alive[:self.num_cracks])
                             or filled > self.W * self.H * self.fill_pct):
                         self.step = steps
                         break
                 else:
+                    # gradually add cracks for pure-python path too
+                    filled_ratio = np.sum(self.cgrid < 10000) / (self.W * self.H)
+                    target = int(self.initial_cracks + (self.num_cracks - self.initial_cracks)
+                                 * min(1.0, filled_ratio / 0.5))
+                    while len(self.cracks) < target:
+                        self.cracks.append(_Crack(self.W, self.H, self.cgrid, self.rng))
+
                     alive_count = 0
                     for crack in self.cracks:
                         if crack.alive:
@@ -430,32 +456,34 @@ class SettingsDialog(tk.Toplevel):
 
     def _build(self):
         pad = dict(padx=10, pady=6)
-        f = ttk.Frame(self, padding=16)
-        f.grid()
 
         accel = "numba ⚡ (fast)" if NUMBA else "pure Python (pip install numba for ~35× speedup)"
-        ttk.Label(f, text="Substrate Generator",
-                  font=("Helvetica", 14, "bold")).grid(row=0, column=0, columnspan=2, pady=(0,4))
-        ttk.Label(f, text=f"Engine: {accel}",
-                  foreground="#080" if NUMBA else "#a00").grid(row=1, column=0, columnspan=2, pady=(0,10))
+        ttk.Label(self, text="Substrate Generator",
+                  font=("Helvetica", 14, "bold")).pack(pady=(14, 2))
+        ttk.Label(self, text=f"Engine: {accel}",
+                  foreground="#080" if NUMBA else "#a00").pack(pady=(0, 8))
 
-        # --- Canvas size preset + manual ---
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True, padx=14)
+
+        # ── Tab 1: Basic ──────────────────────────────────────────────────
+        t1 = ttk.Frame(notebook, padding=10)
+        notebook.add(t1, text="  Basic  ")
+
         SIZE_PRESETS = {
             "1080p  (1920×1080)": (1920, 1080),
             "4K     (3840×2160)": (3840, 2160),
             "Square (800×800)":   (800,  800),
             "Manual":             None,
         }
-        ttk.Label(f, text="Canvas size:").grid(row=2, column=0, sticky="e", **pad)
+        ttk.Label(t1, text="Canvas size:").grid(row=0, column=0, sticky="e", **pad)
         self.size_preset = tk.StringVar(value="Square (800×800)")
-        size_cb = ttk.Combobox(f, textvariable=self.size_preset,
-                               values=list(SIZE_PRESETS.keys()),
-                               state="readonly", width=20)
-        size_cb.grid(row=2, column=1, sticky="w", padx=10, pady=6)
+        ttk.Combobox(t1, textvariable=self.size_preset,
+                     values=list(SIZE_PRESETS.keys()),
+                     state="readonly", width=20).grid(row=0, column=1, sticky="w", padx=10, pady=6)
 
-        # manual W/H entries (shown only when Manual is selected)
-        manual_frame = ttk.Frame(f)
-        manual_frame.grid(row=3, column=0, columnspan=2, pady=0)
+        manual_frame = ttk.Frame(t1)
+        manual_frame.grid(row=1, column=0, columnspan=2, pady=0)
         ttk.Label(manual_frame, text="Width:").pack(side="left", padx=(10,2))
         self.width_var = tk.StringVar(value="800")
         self._w_entry = ttk.Entry(manual_frame, textvariable=self.width_var, width=7)
@@ -466,8 +494,7 @@ class SettingsDialog(tk.Toplevel):
         self._h_entry.pack(side="left")
 
         def on_preset_change(*_):
-            preset = self.size_preset.get()
-            wh = SIZE_PRESETS.get(preset)
+            wh = SIZE_PRESETS.get(self.size_preset.get())
             if wh:
                 self.width_var.set(str(wh[0]))
                 self.height_var.set(str(wh[1]))
@@ -476,29 +503,26 @@ class SettingsDialog(tk.Toplevel):
             else:
                 self._w_entry.config(state="normal")
                 self._h_entry.config(state="normal")
-
         self.size_preset.trace_add("write", on_preset_change)
-        on_preset_change()   # apply initial state
+        on_preset_change()
 
-        # --- Other fields ---
-        fields = [
+        basic_fields = [
             ("Cracks",                "cracks", "100"),
             ("Steps",                 "steps",  "500000"),
             ("Seed (blank = random)", "seed",   ""),
         ]
         self.vars = {}
-        for i, (label, key, default) in enumerate(fields, start=4):
-            ttk.Label(f, text=label + ":").grid(row=i, column=0, sticky="e", **pad)
+        for i, (label, key, default) in enumerate(basic_fields, start=2):
+            ttk.Label(t1, text=label + ":").grid(row=i, column=0, sticky="e", **pad)
             v = tk.StringVar(value=default)
-            ttk.Entry(f, textvariable=v, width=14).grid(row=i, column=1, sticky="w", **pad)
+            ttk.Entry(t1, textvariable=v, width=14).grid(row=i, column=1, sticky="w", **pad)
             self.vars[key] = v
 
-        base_row = 4 + len(fields)
+        base = 2 + len(basic_fields)
 
-        # --- Fill % slider ---
-        ttk.Label(f, text="Stop at fill %:").grid(row=base_row, column=0, sticky="e", **pad)
-        fill_frame = ttk.Frame(f)
-        fill_frame.grid(row=base_row, column=1, sticky="w", padx=10)
+        ttk.Label(t1, text="Stop at fill %:").grid(row=base, column=0, sticky="e", **pad)
+        fill_frame = ttk.Frame(t1)
+        fill_frame.grid(row=base, column=1, sticky="w", padx=10)
         self.fill_var = tk.IntVar(value=30)
         self.fill_label = ttk.Label(fill_frame, text="30%", width=5)
         self.fill_label.pack(side="right")
@@ -507,22 +531,79 @@ class SettingsDialog(tk.Toplevel):
                   command=lambda v: self.fill_label.config(
                       text=f"{int(float(v))}%")).pack(side="left")
 
-        # --- Output format ---
-        ttk.Label(f, text="Output format:").grid(row=base_row+1, column=0, sticky="e", **pad)
+        ttk.Label(t1, text="Output format:").grid(row=base+1, column=0, sticky="e", **pad)
         self.fmt_var = tk.StringVar(value="PNG")
-        fmt_frame = ttk.Frame(f)
-        fmt_frame.grid(row=base_row+1, column=1, sticky="w", padx=10)
-        ttk.Radiobutton(fmt_frame, text="PNG",  variable=self.fmt_var, value="PNG").pack(side="left")
-        ttk.Radiobutton(fmt_frame, text="JPEG", variable=self.fmt_var, value="JPEG").pack(side="left", padx=8)
+        fmt_f = ttk.Frame(t1)
+        fmt_f.grid(row=base+1, column=1, sticky="w", padx=10)
+        ttk.Radiobutton(fmt_f, text="PNG",  variable=self.fmt_var, value="PNG").pack(side="left")
+        ttk.Radiobutton(fmt_f, text="JPEG", variable=self.fmt_var, value="JPEG").pack(side="left", padx=8)
 
-        # --- Preview refresh ---
-        ttk.Label(f, text="Preview refresh (ms):").grid(row=base_row+2, column=0, sticky="e", **pad)
+        ttk.Label(t1, text="Preview refresh (ms):").grid(row=base+2, column=0, sticky="e", **pad)
         self.refresh_var = tk.StringVar(value="150")
-        ttk.Entry(f, textvariable=self.refresh_var, width=14).grid(
-            row=base_row+2, column=1, sticky="w", **pad)
+        ttk.Entry(t1, textvariable=self.refresh_var, width=14).grid(
+            row=base+2, column=1, sticky="w", **pad)
 
-        btn = ttk.Frame(f)
-        btn.grid(row=base_row+3, column=0, columnspan=2, pady=(12,0))
+        # ── Tab 2: Advanced ───────────────────────────────────────────────
+        t2 = ttk.Frame(notebook, padding=10)
+        notebook.add(t2, text="  Advanced  ")
+
+        ttk.Label(t2, text="Controls how density builds up over time.",
+                  foreground="#555").grid(row=0, column=0, columnspan=2, pady=(0,10))
+
+        # Initial cracks slider
+        ttk.Label(t2, text="Initial cracks:").grid(row=1, column=0, sticky="e", **pad)
+        ic_frame = ttk.Frame(t2)
+        ic_frame.grid(row=1, column=1, sticky="w", padx=10)
+        self.ic_var = tk.IntVar(value=3)
+        self.ic_label = ttk.Label(ic_frame, text="3", width=4)
+        self.ic_label.pack(side="right")
+        ttk.Scale(ic_frame, from_=1, to=20, orient="horizontal",
+                  variable=self.ic_var, length=140,
+                  command=lambda v: self.ic_label.config(
+                      text=str(int(float(v))))).pack(side="left")
+        ttk.Label(t2, text="Fewer = larger primary regions, more contrast",
+                  foreground="#777").grid(row=2, column=0, columnspan=2, pady=(0,6))
+
+        # Grid seeds slider
+        ttk.Label(t2, text="Grid seeds:").grid(row=3, column=0, sticky="e", **pad)
+        gs_frame = ttk.Frame(t2)
+        gs_frame.grid(row=3, column=1, sticky="w", padx=10)
+        self.gs_var = tk.IntVar(value=16)
+        self.gs_label = ttk.Label(gs_frame, text="16", width=4)
+        self.gs_label.pack(side="right")
+        ttk.Scale(gs_frame, from_=1, to=64, orient="horizontal",
+                  variable=self.gs_var, length=140,
+                  command=lambda v: self.gs_label.config(
+                      text=str(int(float(v))))).pack(side="left")
+        ttk.Label(t2, text="Fewer = cracks cluster in one area",
+                  foreground="#777").grid(row=4, column=0, columnspan=2, pady=(0,6))
+
+        # Presets
+        ttk.Label(t2, text="Presets:").grid(row=5, column=0, sticky="e", **pad)
+        preset_f = ttk.Frame(t2)
+        preset_f.grid(row=5, column=1, sticky="w", padx=10)
+
+        def apply_preset(ic, gs):
+            self.ic_var.set(ic); self.ic_label.config(text=str(ic))
+            self.gs_var.set(gs); self.gs_label.config(text=str(gs))
+
+        ttk.Button(preset_f, text="Original",
+                   command=lambda: apply_preset(3, 4)).pack(side="left", padx=2)
+        ttk.Button(preset_f, text="Balanced",
+                   command=lambda: apply_preset(8, 16)).pack(side="left", padx=2)
+        ttk.Button(preset_f, text="Uniform",
+                   command=lambda: apply_preset(20, 32)).pack(side="left", padx=2)
+
+        ttk.Label(t2,
+                  text="Original: few seeds, slow ramp → dense clusters\n"
+                       "Balanced: moderate contrast (default)\n"
+                       "Uniform:  even coverage like a grid",
+                  foreground="#555", justify="left").grid(
+            row=6, column=0, columnspan=2, padx=10, pady=(6,0))
+
+        # ── Buttons ───────────────────────────────────────────────────────
+        btn = ttk.Frame(self)
+        btn.pack(pady=12)
         ttk.Button(btn, text="Generate", command=self._ok).pack(side="left", padx=6)
         ttk.Button(btn, text="Cancel",   command=self.destroy).pack(side="left", padx=6)
 
@@ -542,7 +623,9 @@ class SettingsDialog(tk.Toplevel):
         self.result = dict(width=w, height=h, cracks=c, steps=s,
                            seed=seed, refresh=refresh,
                            fill_pct=int(self.fill_var.get()),
-                           fmt=self.fmt_var.get())
+                           fmt=self.fmt_var.get(),
+                           initial_cracks=int(self.ic_var.get()),
+                           num_seeds=int(self.gs_var.get()))
         self.destroy()
 
 
@@ -609,7 +692,8 @@ class SubstrateApp(tk.Tk):
         self.update_idletasks()
 
         self.engine = SubstrateEngine(p["width"], p["height"], p["cracks"],
-                                      p["seed"], p["fill_pct"])
+                                      p["seed"], p["fill_pct"],
+                                      p["initial_cracks"], p["num_seeds"])
         self.progress["value"] = 0
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
