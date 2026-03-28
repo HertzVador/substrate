@@ -31,17 +31,24 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 PALETTE_NB = np.array([
-    [214,178,120],[190,140, 80],[160,100, 50],[220,200,160],
-    [180,160,130],[200,180,140],[240,220,180],[160,130, 90],
-    [100, 70, 40],[230,210,170],[170,140,100],[210,190,150],
-    [140,110, 70],[250,230,190],[120, 90, 55],[195,165,115],
-    [175,145, 95],[205,175,125],[185,155,105],[165,135, 85],
-    [ 80, 55, 30],[245,225,185],[155,125, 75],[225,205,165],
-    [135,105, 65],[215,195,155],[145,115, 70],[235,215,175],
-    [125, 95, 60],[255,235,195],[115, 85, 50],[205,185,145],
-    [120,140,160],[ 90,110,140],[150,170,190],[ 70, 90,120],
-    [100,130,150],[140,160,180],[ 60, 80,110],[130,150,170],
-    [160,130,110],[180,150,130],[200,170,150],[140,110, 90],
+    # warm earth tones
+    [180, 120,  60],[140,  80,  30],[100,  50,  20],[200, 150,  80],
+    [160, 100,  40],[220, 170,  90],[120,  70,  25],[240, 190, 110],
+    # cool blues/greens
+    [ 40,  80, 140],[ 20,  60, 120],[ 60, 100, 160],[ 30,  70, 130],
+    [ 50, 120, 100],[ 30,  90,  70],[ 70, 140, 110],[ 40, 110,  80],
+    # muted reds/purples
+    [140,  50,  50],[120,  40,  60],[160,  70,  70],[100,  40,  80],
+    [150,  60,  90],[130,  45,  55],[170,  80,  60],[110,  50,  70],
+    # ochres/olives
+    [140, 130,  40],[120, 110,  30],[160, 150,  50],[100,  90,  20],
+    [150, 140,  45],[130, 120,  35],[170, 160,  55],[110, 100,  25],
+    # dark accents
+    [ 40,  40,  60],[ 60,  40,  40],[ 40,  60,  40],[ 50,  50,  70],
+    [ 80,  50,  30],[ 30,  50,  80],[ 50,  80,  50],[ 60,  30,  60],
+    # light pastels for contrast
+    [220, 200, 180],[200, 220, 210],[210, 200, 230],[230, 210, 190],
+    [190, 210, 220],[215, 195, 215],[205, 220, 200],[225, 205, 185],
 ], dtype=np.float64)
 
 PAL_LEN = len(PALETTE_NB)
@@ -57,7 +64,8 @@ def _run_batch(canvas, cgrid, W, H,
                sand_c, sand_g,
                rng_state,
                alive,
-               batch_size, num_cracks):
+               batch_size, num_cracks,
+               origin_x, origin_y, origin_bias):
     PI180 = math.pi / 180.0
     CRACK_KEEP = (255.0 - 85.0) / 255.0
     M1 = np.uint64(6364136223846793005)
@@ -89,10 +97,10 @@ def _run_batch(canvas, cgrid, W, H,
             v = float(s >> np.uint64(33)) / 2147483648.0
             cy = int(crack_y[ci] + v * 0.66 - 0.33)
 
-            # walk perpendicular to find region boundary
+            # walk perpendicular to find region boundary (max 300px)
             rx = crack_x[ci]
             ry = crack_y[ci]
-            for _w in range(2000):
+            for _w in range(300):
                 rx += 0.81 * sin_t
                 ry -= 0.81 * cos_t
                 rcx = int(rx)
@@ -150,12 +158,22 @@ def _run_batch(canvas, cgrid, W, H,
                 elif abs(float(existing) - t) > 2.0:
                     needs_restart = True
 
-            # restart or retire — inlined find_start
+            # restart or retire — biased find_start
+            # samples up to 200 candidates, picks closest to origin
+            # when origin_bias > 0
             if needs_restart:
                 found = False
                 fpx = 0
                 fpy = 0
-                for _t in range(200):   # 200 tries is enough; 1000 was too slow on full grids
+                best_fpx = 0
+                best_fpy = 0
+                best_dist = 1e18
+
+                # number of candidates to compare scales with bias
+                # bias=0 → 1 candidate (uniform), bias=1 → 40 candidates
+                n_candidates = 1 + int(origin_bias * 39.0)
+
+                for _t in range(200):
                     s = (s * M1 + M2) & MASK
                     v = float(s >> np.uint64(33)) / 2147483648.0
                     fpx = int(v * W)
@@ -165,12 +183,23 @@ def _run_batch(canvas, cgrid, W, H,
                     fpy = int(v * H)
                     if fpy >= H: fpy = H - 1
                     if cgrid[fpy * W + fpx] < 10000:
+                        dx = float(fpx) - origin_x
+                        dy = float(fpy) - origin_y
+                        dist = dx*dx + dy*dy
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_fpx = fpx
+                            best_fpy = fpy
                         found = True
-                        break
+                        n_candidates -= 1
+                        if n_candidates <= 0:
+                            break
 
                 if not found:
-                    alive[ci] = 0   # grid is full — retire this crack
+                    alive[ci] = 0
                 else:
+                    fpx = best_fpx
+                    fpy = best_fpy
                     fa = float(cgrid[fpy * W + fpx])
                     s = (s * M1 + M2) & MASK
                     v = float(s >> np.uint64(33)) / 2147483648.0
@@ -299,7 +328,8 @@ class SubstrateEngine:
     BATCH = 500
 
     def __init__(self, width, height, num_cracks, seed=None, fill_pct=95,
-                 initial_cracks=3, num_seeds=16, vsync=False):
+                 initial_cracks=3, num_seeds=16, vsync=False,
+                 origin_x=0.0, origin_y=0.0, origin_bias=0.0):
         self.W = width
         self.H = height
         self.num_cracks    = min(num_cracks, MAX_CRACKS)
@@ -310,7 +340,11 @@ class SubstrateEngine:
         self.fill_pct = max(1, min(100, fill_pct)) / 100.0
         self.vsync = vsync
         self._frame_consumed = threading.Event()
-        self._frame_consumed.set()   # allow first batch immediately
+        self._frame_consumed.set()
+        # origin bias: normalised 0-1 coords, bias strength 0-1
+        self.origin_x    = float(origin_x) * width
+        self.origin_y    = float(origin_y) * height
+        self.origin_bias = float(origin_bias)
 
         rng_seed = seed if seed is not None else random.randint(0, 2**31)
         self.rng = np.random.default_rng(rng_seed)
@@ -318,11 +352,21 @@ class SubstrateEngine:
         self.canvas = np.full((height, width, 3), 255, dtype=np.uint8)
         self.cgrid  = np.full(width * height, 10001, dtype=np.int32)
 
-        # seed initial crack directions — spread across canvas
+        # seed initial crack directions — clustered near origin when bias > 0
         n_seeds = max(1, min(num_seeds, 256))
+        ox_px = self.origin_x
+        oy_px = self.origin_y
+        spread = max(width, height) * (1.0 - self.origin_bias * 0.8)
         for _ in range(n_seeds):
-            x = int(self.rng.integers(0, width))
-            y = int(self.rng.integers(0, height))
+            if self.origin_bias > 0:
+                # gaussian cluster around origin
+                x = int(ox_px + self.rng.normal(0, spread * 0.15))
+                y = int(oy_px + self.rng.normal(0, spread * 0.15))
+                x = max(0, min(width - 1, x))
+                y = max(0, min(height - 1, y))
+            else:
+                x = int(self.rng.integers(0, width))
+                y = int(self.rng.integers(0, height))
             self.cgrid[y * width + x] = int(self.rng.integers(0, 360))
 
         if NUMBA:
@@ -383,7 +427,8 @@ class SubstrateEngine:
             _run_batch(self.canvas, self.cgrid, self.W, self.H,
                        self.crack_x, self.crack_y, self.crack_t,
                        self.sand_c, self.sand_g, self.rng_state,
-                       self.alive, 1, self.num_cracks)
+                       self.alive, 1, self.num_cracks,
+                       self.origin_x, self.origin_y, self.origin_bias)
 
         while self.step < steps and self.running:
 
@@ -398,7 +443,8 @@ class SubstrateEngine:
                         self.canvas, self.cgrid, self.W, self.H,
                         self.crack_x, self.crack_y, self.crack_t,
                         self.sand_c, self.sand_g, self.rng_state,
-                        self.alive, batch, self.num_cracks)
+                        self.alive, batch, self.num_cracks,
+                        self.origin_x, self.origin_y, self.origin_bias)
 
                     # use visual fill (non-white pixels) — cgrid only marks
                     # crack lines, not the sand regions between them
@@ -628,6 +674,74 @@ class SettingsDialog(tk.Toplevel):
                   foreground="#555", justify="left").grid(
             row=9, column=0, columnspan=2, padx=10, pady=(2, 0))
 
+        # ── Tab 3: Origin ─────────────────────────────────────────────────
+        t3 = ttk.Frame(notebook, padding=10)
+        notebook.add(t3, text="  Origin  ")
+
+        ttk.Label(t3, text="Controls where crack activity is concentrated.",
+                  foreground="#555").grid(row=0, column=0, columnspan=2, pady=(0,10))
+
+        # Origin position X
+        ttk.Label(t3, text="Origin X:").grid(row=1, column=0, sticky="e", **pad)
+        ox_frame = ttk.Frame(t3)
+        ox_frame.grid(row=1, column=1, sticky="w", padx=10)
+        self.ox_var = tk.DoubleVar(value=0.1)
+        self.ox_label = ttk.Label(ox_frame, text="10%", width=5)
+        self.ox_label.pack(side="right")
+        ttk.Scale(ox_frame, from_=0.0, to=1.0, orient="horizontal",
+                  variable=self.ox_var, length=140,
+                  command=lambda v: self.ox_label.config(
+                      text=f"{int(float(v)*100)}%")).pack(side="left")
+
+        # Origin position Y
+        ttk.Label(t3, text="Origin Y:").grid(row=2, column=0, sticky="e", **pad)
+        oy_frame = ttk.Frame(t3)
+        oy_frame.grid(row=2, column=1, sticky="w", padx=10)
+        self.oy_var = tk.DoubleVar(value=0.1)
+        self.oy_label = ttk.Label(oy_frame, text="10%", width=5)
+        self.oy_label.pack(side="right")
+        ttk.Scale(oy_frame, from_=0.0, to=1.0, orient="horizontal",
+                  variable=self.oy_var, length=140,
+                  command=lambda v: self.oy_label.config(
+                      text=f"{int(float(v)*100)}%")).pack(side="left")
+
+        ttk.Label(t3, text="0% = left/top edge,  100% = right/bottom edge",
+                  foreground="#777").grid(row=3, column=0, columnspan=2, padx=10, pady=(0,8))
+
+        # Origin bias strength
+        ttk.Label(t3, text="Bias strength:").grid(row=4, column=0, sticky="e", **pad)
+        ob_frame = ttk.Frame(t3)
+        ob_frame.grid(row=4, column=1, sticky="w", padx=10)
+        self.ob_var = tk.DoubleVar(value=0.8)
+        self.ob_label = ttk.Label(ob_frame, text="80%", width=5)
+        self.ob_label.pack(side="right")
+        ttk.Scale(ob_frame, from_=0.0, to=1.0, orient="horizontal",
+                  variable=self.ob_var, length=140,
+                  command=lambda v: self.ob_label.config(
+                      text=f"{int(float(v)*100)}%")).pack(side="left")
+        ttk.Label(t3, text="0% = uniform spread,  100% = strong pull to origin",
+                  foreground="#777").grid(row=5, column=0, columnspan=2, padx=10, pady=(0,8))
+
+        # Quick position presets
+        ttk.Label(t3, text="Presets:").grid(row=6, column=0, sticky="e", **pad)
+        pos_f = ttk.Frame(t3)
+        pos_f.grid(row=6, column=1, sticky="w", padx=10)
+
+        def set_origin(x, y):
+            self.ox_var.set(x); self.ox_label.config(text=f"{int(x*100)}%")
+            self.oy_var.set(y); self.oy_label.config(text=f"{int(y*100)}%")
+
+        ttk.Button(pos_f, text="Top-left",
+                   command=lambda: set_origin(0.05, 0.05)).pack(side="left", padx=2)
+        ttk.Button(pos_f, text="Center",
+                   command=lambda: set_origin(0.5, 0.5)).pack(side="left", padx=2)
+        ttk.Button(pos_f, text="Bottom-right",
+                   command=lambda: set_origin(0.95, 0.95)).pack(side="left", padx=2)
+        ttk.Button(pos_f, text="Random",
+                   command=lambda: set_origin(
+                       round(random.random(), 2),
+                       round(random.random(), 2))).pack(side="left", padx=2)
+
         # ── Buttons ───────────────────────────────────────────────────────
         btn = ttk.Frame(self)
         btn.pack(pady=12)
@@ -653,7 +767,10 @@ class SettingsDialog(tk.Toplevel):
                            fmt=self.fmt_var.get(),
                            initial_cracks=int(self.ic_var.get()),
                            num_seeds=int(self.gs_var.get()),
-                           vsync=self.vsync_var.get())
+                           vsync=self.vsync_var.get(),
+                           origin_x=round(self.ox_var.get(), 3),
+                           origin_y=round(self.oy_var.get(), 3),
+                           origin_bias=round(self.ob_var.get(), 3))
         self.destroy()
 
 
@@ -734,7 +851,9 @@ class SubstrateApp(tk.Tk):
                                       scaled_cracks,
                                       p["seed"], p["fill_pct"],
                                       initial_cracks, scaled_seeds,
-                                      p["vsync"])
+                                      p["vsync"],
+                                      p["origin_x"], p["origin_y"],
+                                      p["origin_bias"])
         self.progress["value"] = 0
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
