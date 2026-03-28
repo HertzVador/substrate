@@ -27,32 +27,114 @@ except ImportError:
     NUMBA = False
 
 # ---------------------------------------------------------------------------
-# Palette  — MUST be defined before @njit functions so numba captures it
+# ---------------------------------------------------------------------------
+# Palettes — all defined before @njit so numba captures them
 # ---------------------------------------------------------------------------
 
-PALETTE_NB = np.array([
-    # warm earth tones
-    [180, 120,  60],[140,  80,  30],[100,  50,  20],[200, 150,  80],
-    [160, 100,  40],[220, 170,  90],[120,  70,  25],[240, 190, 110],
-    # cool blues/greens
-    [ 40,  80, 140],[ 20,  60, 120],[ 60, 100, 160],[ 30,  70, 130],
-    [ 50, 120, 100],[ 30,  90,  70],[ 70, 140, 110],[ 40, 110,  80],
-    # muted reds/purples
-    [140,  50,  50],[120,  40,  60],[160,  70,  70],[100,  40,  80],
-    [150,  60,  90],[130,  45,  55],[170,  80,  60],[110,  50,  70],
-    # ochres/olives
-    [140, 130,  40],[120, 110,  30],[160, 150,  50],[100,  90,  20],
-    [150, 140,  45],[130, 120,  35],[170, 160,  55],[110, 100,  25],
-    # dark accents
-    [ 40,  40,  60],[ 60,  40,  40],[ 40,  60,  40],[ 50,  50,  70],
-    [ 80,  50,  30],[ 30,  50,  80],[ 50,  80,  50],[ 60,  30,  60],
-    # light pastels for contrast
-    [220, 200, 180],[200, 220, 210],[210, 200, 230],[230, 210, 190],
-    [190, 210, 220],[215, 195, 215],[205, 220, 200],[225, 205, 185],
-], dtype=np.float64)
+PALETTES = {
+    "Tarbell Original": np.array([
+        [214,178,120],[190,140, 80],[160,100, 50],[220,200,160],
+        [180,160,130],[200,180,140],[240,220,180],[160,130, 90],
+        [100, 70, 40],[230,210,170],[170,140,100],[210,190,150],
+        [140,110, 70],[250,230,190],[120, 90, 55],[195,165,115],
+        [175,145, 95],[205,175,125],[185,155,105],[165,135, 85],
+        [ 80, 55, 30],[245,225,185],[155,125, 75],[225,205,165],
+        [135,105, 65],[215,195,155],[145,115, 70],[235,215,175],
+        [125, 95, 60],[255,235,195],[115, 85, 50],[205,185,145],
+        [120,140,160],[ 90,110,140],[150,170,190],[ 70, 90,120],
+        [100,130,150],[140,160,180],[ 60, 80,110],[130,150,170],
+        [160,130,110],[180,150,130],[200,170,150],[140,110, 90],
+    ], dtype=np.float64),
 
-PAL_LEN = len(PALETTE_NB)
-MAX_CRACKS = 2048   # enough for 4K with scaling
+    "Vivid": np.array([
+        [180,120, 60],[140, 80, 30],[100, 50, 20],[200,150, 80],
+        [160,100, 40],[220,170, 90],[120, 70, 25],[240,190,110],
+        [ 40, 80,140],[ 20, 60,120],[ 60,100,160],[ 30, 70,130],
+        [ 50,120,100],[ 30, 90, 70],[ 70,140,110],[ 40,110, 80],
+        [140, 50, 50],[120, 40, 60],[160, 70, 70],[100, 40, 80],
+        [150, 60, 90],[130, 45, 55],[170, 80, 60],[110, 50, 70],
+        [140,130, 40],[120,110, 30],[160,150, 50],[100, 90, 20],
+        [ 40, 40, 60],[ 60, 40, 40],[ 40, 60, 40],[ 50, 50, 70],
+        [220,200,180],[200,220,210],[210,200,230],[230,210,190],
+        [190,210,220],[215,195,215],[205,220,200],[225,205,185],
+        [ 80, 50, 30],[ 30, 50, 80],[ 50, 80, 50],[ 60, 30, 60],
+    ], dtype=np.float64),
+
+    "Ocean": np.array([
+        [ 10, 60,100],[ 20, 80,130],[ 30,100,150],[ 15, 70,120],
+        [ 40,120,160],[ 50,140,170],[ 60,150,180],[ 25, 90,140],
+        [ 80,160,190],[100,170,200],[120,180,210],[ 70,150,185],
+        [140,190,215],[160,200,220],[180,210,225],[150,195,218],
+        [ 10, 40, 80],[ 20, 50, 90],[ 30, 60,100],[ 15, 45, 85],
+        [200,220,230],[210,225,235],[220,230,240],[205,222,232],
+        [ 60,130,160],[ 70,140,170],[ 80,150,180],[ 65,135,165],
+        [  5, 30, 60],[  8, 35, 65],[ 12, 40, 70],[  6, 32, 62],
+        [170,205,220],[180,210,225],[190,215,228],[175,207,222],
+        [100,160,190],[110,165,195],[120,170,200],[105,162,192],
+        [ 90,155,185],[ 95,158,188],[ 85,152,182],[ 88,154,184],
+    ], dtype=np.float64),
+
+    "Ember": np.array([
+        [180, 40, 10],[160, 30,  8],[200, 60, 15],[140, 25,  5],
+        [220, 80, 20],[200, 70, 18],[240,100, 25],[210, 75, 20],
+        [240,140, 30],[220,120, 25],[200,100, 20],[230,130, 28],
+        [250,180, 50],[240,160, 40],[230,150, 35],[245,170, 45],
+        [255,200, 80],[250,190, 70],[245,185, 65],[252,195, 75],
+        [255,220,120],[252,210,100],[248,205, 90],[254,215,110],
+        [ 80, 20,  5],[ 60, 15,  3],[ 40, 10,  2],[ 70, 18,  4],
+        [100, 30, 10],[ 90, 25,  8],[110, 35, 12],[ 95, 28,  9],
+        [255,240,180],[252,235,170],[248,230,160],[254,238,175],
+        [120, 40, 15],[130, 45, 18],[140, 50, 20],[125, 42, 16],
+        [160, 60, 25],[170, 65, 28],[150, 55, 22],[165, 62, 26],
+    ], dtype=np.float64),
+
+    "Monochrome": np.array([
+        [ 20, 20, 20],[ 30, 30, 30],[ 40, 40, 40],[ 50, 50, 50],
+        [ 60, 60, 60],[ 70, 70, 70],[ 80, 80, 80],[ 90, 90, 90],
+        [100,100,100],[110,110,110],[120,120,120],[130,130,130],
+        [140,140,140],[150,150,150],[160,160,160],[170,170,170],
+        [180,180,180],[190,190,190],[200,200,200],[210,210,210],
+        [ 25, 25, 25],[ 35, 35, 35],[ 45, 45, 45],[ 55, 55, 55],
+        [ 65, 65, 65],[ 75, 75, 75],[ 85, 85, 85],[ 95, 95, 95],
+        [105,105,105],[115,115,115],[125,125,125],[135,135,135],
+        [145,145,145],[155,155,155],[165,165,165],[175,175,175],
+        [185,185,185],[195,195,195],[205,205,205],[215,215,215],
+        [ 15, 15, 15],[ 22, 22, 22],[ 48, 48, 48],[ 72, 72, 72],
+    ], dtype=np.float64),
+
+    "Forest": np.array([
+        [ 30, 60, 20],[ 40, 75, 25],[ 50, 90, 30],[ 35, 68, 22],
+        [ 60,100, 35],[ 70,110, 40],[ 80,120, 45],[ 65,105, 38],
+        [ 90,130, 50],[100,140, 55],[110,150, 60],[ 95,135, 52],
+        [120,160, 65],[130,170, 70],[140,180, 75],[125,165, 68],
+        [ 80,100, 40],[ 90,110, 45],[100,120, 50],[ 85,105, 42],
+        [160,140, 60],[140,120, 50],[120,100, 40],[150,130, 55],
+        [180,160, 80],[160,140, 70],[140,120, 60],[170,150, 75],
+        [ 20, 40, 15],[ 25, 50, 18],[ 30, 55, 20],[ 22, 45, 16],
+        [200,190,140],[190,180,130],[180,170,120],[195,185,135],
+        [ 60, 80, 30],[ 70, 90, 35],[ 50, 70, 25],[ 65, 85, 32],
+        [110,130, 55],[120,140, 60],[100,120, 50],[115,135, 58],
+    ], dtype=np.float64),
+}
+
+PALETTE_NAMES = list(PALETTES.keys())
+
+# Build a single stacked array: shape (N_PALETTES, 44, 3)
+# numba will index into this with a palette index
+_PAL_SIZE = 44
+ALL_PALETTES = np.zeros((len(PALETTE_NAMES), _PAL_SIZE, 3), dtype=np.float64)
+for _i, _name in enumerate(PALETTE_NAMES):
+    _p = PALETTES[_name]
+    _n = min(len(_p), _PAL_SIZE)
+    ALL_PALETTES[_i, :_n] = _p[:_n]
+    if _n < _PAL_SIZE:   # tile if shorter than 44
+        for _j in range(_n, _PAL_SIZE):
+            ALL_PALETTES[_i, _j] = _p[_j % _n]
+
+# Keep PALETTE_NB pointing at the default (Vivid) for backward compat
+PALETTE_NB = ALL_PALETTES[1]   # "Vivid"
+PAL_LEN = _PAL_SIZE
+MAX_CRACKS = 2048
 
 # ---------------------------------------------------------------------------
 # Numba JIT inner loop
@@ -65,7 +147,8 @@ def _run_batch(canvas, cgrid, W, H,
                rng_state,
                alive,
                batch_size, num_cracks,
-               origin_x, origin_y, origin_bias):
+               origin_x, origin_y, origin_bias,
+               palette_idx):
     PI180 = math.pi / 180.0
     CRACK_KEEP = (255.0 - 85.0) / 255.0
     M1 = np.uint64(6364136223846793005)
@@ -214,9 +297,9 @@ def _run_batch(canvas, cgrid, W, H,
                     v = float(s >> np.uint64(33)) / 2147483648.0
                     pi = int(v * PAL_LEN)
                     if pi >= PAL_LEN: pi = PAL_LEN - 1
-                    sand_c[ci, 0] = PALETTE_NB[pi, 0]
-                    sand_c[ci, 1] = PALETTE_NB[pi, 1]
-                    sand_c[ci, 2] = PALETTE_NB[pi, 2]
+                    sand_c[ci, 0] = ALL_PALETTES[palette_idx, pi, 0]
+                    sand_c[ci, 1] = ALL_PALETTES[palette_idx, pi, 1]
+                    sand_c[ci, 2] = ALL_PALETTES[palette_idx, pi, 2]
                     s = (s * M1 + M2) & MASK
                     v = float(s >> np.uint64(33)) / 2147483648.0
                     sand_g[ci] = 0.01 + v * 0.09
@@ -329,7 +412,8 @@ class SubstrateEngine:
 
     def __init__(self, width, height, num_cracks, seed=None, fill_pct=95,
                  initial_cracks=3, num_seeds=16, vsync=False,
-                 origin_x=0.0, origin_y=0.0, origin_bias=0.0):
+                 origin_x=0.0, origin_y=0.0, origin_bias=0.0,
+                 palette_idx=1):
         self.W = width
         self.H = height
         self.num_cracks    = min(num_cracks, MAX_CRACKS)
@@ -345,6 +429,7 @@ class SubstrateEngine:
         self.origin_x    = float(origin_x) * width
         self.origin_y    = float(origin_y) * height
         self.origin_bias = float(origin_bias)
+        self.palette_idx = int(palette_idx)
 
         rng_seed = seed if seed is not None else random.randint(0, 2**31)
         self.rng = np.random.default_rng(rng_seed)
@@ -409,7 +494,7 @@ class SubstrateEngine:
         self.crack_y[ci] = py + 0.61 * math.sin(math.radians(a))
         self.crack_t[ci] = a
         pi = int(self.rng.integers(0, PAL_LEN))
-        self.sand_c[ci] = PALETTE_NB[pi]
+        self.sand_c[ci] = ALL_PALETTES[self.palette_idx, pi]
         self.sand_g[ci] = self.rng.uniform(0.01, 0.1)
 
     def _init_python(self):
@@ -428,7 +513,8 @@ class SubstrateEngine:
                        self.crack_x, self.crack_y, self.crack_t,
                        self.sand_c, self.sand_g, self.rng_state,
                        self.alive, 1, self.num_cracks,
-                       self.origin_x, self.origin_y, self.origin_bias)
+                       self.origin_x, self.origin_y, self.origin_bias,
+                       self.palette_idx)
 
         while self.step < steps and self.running:
 
@@ -444,7 +530,8 @@ class SubstrateEngine:
                         self.crack_x, self.crack_y, self.crack_t,
                         self.sand_c, self.sand_g, self.rng_state,
                         self.alive, batch, self.num_cracks,
-                        self.origin_x, self.origin_y, self.origin_bias)
+                        self.origin_x, self.origin_y, self.origin_bias,
+                        self.palette_idx)
 
                     # use visual fill (non-white pixels) — cgrid only marks
                     # crack lines, not the sand regions between them
@@ -742,6 +829,31 @@ class SettingsDialog(tk.Toplevel):
                        round(random.random(), 2),
                        round(random.random(), 2))).pack(side="left", padx=2)
 
+        # ── Tab 4: Palette ────────────────────────────────────────────────
+        t4 = ttk.Frame(notebook, padding=10)
+        notebook.add(t4, text="  Palette  ")
+
+        ttk.Label(t4, text="Choose a color palette for the sand regions.",
+                  foreground="#555").grid(row=0, column=0, columnspan=2, pady=(0,10))
+
+        self.palette_var = tk.StringVar(value="Vivid")
+
+        for i, name in enumerate(PALETTE_NAMES):
+            row = i + 1
+            rb = ttk.Radiobutton(t4, text=name, variable=self.palette_var, value=name)
+            rb.grid(row=row, column=0, sticky="w", padx=10, pady=3)
+
+            # Draw a small color swatch
+            swatch = tk.Canvas(t4, width=180, height=16, highlightthickness=0)
+            swatch.grid(row=row, column=1, padx=10, pady=3, sticky="w")
+            pal = PALETTES[name]
+            sw = 180 // len(pal)
+            for j, color in enumerate(pal):
+                r, g, b = int(color[0]), int(color[1]), int(color[2])
+                swatch.create_rectangle(j*sw, 0, (j+1)*sw, 16,
+                                        fill=f'#{r:02x}{g:02x}{b:02x}',
+                                        outline='')
+
         # ── Buttons ───────────────────────────────────────────────────────
         btn = ttk.Frame(self)
         btn.pack(pady=12)
@@ -770,7 +882,8 @@ class SettingsDialog(tk.Toplevel):
                            vsync=self.vsync_var.get(),
                            origin_x=round(self.ox_var.get(), 3),
                            origin_y=round(self.oy_var.get(), 3),
-                           origin_bias=round(self.ob_var.get(), 3))
+                           origin_bias=round(self.ob_var.get(), 3),
+                           palette_idx=PALETTE_NAMES.index(self.palette_var.get()))
         self.destroy()
 
 
@@ -853,7 +966,8 @@ class SubstrateApp(tk.Tk):
                                       initial_cracks, scaled_seeds,
                                       p["vsync"],
                                       p["origin_x"], p["origin_y"],
-                                      p["origin_bias"])
+                                      p["origin_bias"],
+                                      p["palette_idx"])
         self.progress["value"] = 0
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
