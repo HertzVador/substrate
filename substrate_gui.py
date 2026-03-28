@@ -772,8 +772,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(t3, text="Origin X:").grid(row=1, column=0, sticky="e", **pad)
         ox_frame = ttk.Frame(t3)
         ox_frame.grid(row=1, column=1, sticky="w", padx=10)
-        self.ox_var = tk.DoubleVar(value=0.1)
-        self.ox_label = ttk.Label(ox_frame, text="10%", width=5)
+        self.ox_var = tk.DoubleVar(value=0.5)
+        self.ox_label = ttk.Label(ox_frame, text="50%", width=5)
         self.ox_label.pack(side="right")
         ttk.Scale(ox_frame, from_=0.0, to=1.0, orient="horizontal",
                   variable=self.ox_var, length=140,
@@ -784,8 +784,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(t3, text="Origin Y:").grid(row=2, column=0, sticky="e", **pad)
         oy_frame = ttk.Frame(t3)
         oy_frame.grid(row=2, column=1, sticky="w", padx=10)
-        self.oy_var = tk.DoubleVar(value=0.1)
-        self.oy_label = ttk.Label(oy_frame, text="10%", width=5)
+        self.oy_var = tk.DoubleVar(value=0.5)
+        self.oy_label = ttk.Label(oy_frame, text="50%", width=5)
         self.oy_label.pack(side="right")
         ttk.Scale(oy_frame, from_=0.0, to=1.0, orient="horizontal",
                   variable=self.oy_var, length=140,
@@ -799,8 +799,8 @@ class SettingsDialog(tk.Toplevel):
         ttk.Label(t3, text="Bias strength:").grid(row=4, column=0, sticky="e", **pad)
         ob_frame = ttk.Frame(t3)
         ob_frame.grid(row=4, column=1, sticky="w", padx=10)
-        self.ob_var = tk.DoubleVar(value=0.8)
-        self.ob_label = ttk.Label(ob_frame, text="80%", width=5)
+        self.ob_var = tk.DoubleVar(value=0.0)
+        self.ob_label = ttk.Label(ob_frame, text="0%", width=5)
         self.ob_label.pack(side="right")
         ttk.Scale(ob_frame, from_=0.0, to=1.0, orient="horizontal",
                   variable=self.ob_var, length=140,
