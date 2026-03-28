@@ -257,7 +257,9 @@ def _run_batch(canvas, cgrid, W, H,
                 # - scores each by distance to origin (closer = better)
                 # - BUT enforces a minimum spread distance so cracks
                 #   don't pile up in one pixel near the origin
-                # restart: uniform random search (bias handled via seed placement)
+                # n_candidates: slider 0-100% → 1-3 candidates
+                # 3 is the safe maximum before dense-area loops occur
+                n_candidates = 1 + int((origin_bias / 0.04) * 2.0)
                 for _t in range(200):
                     s = (s * M1 + M2) & MASK
                     v = float(s >> np.uint64(33)) / 2147483648.0
@@ -268,10 +270,17 @@ def _run_batch(canvas, cgrid, W, H,
                     fpy = int(v * H)
                     if fpy >= H: fpy = H - 1
                     if cgrid[fpy * W + fpx] < 10000:
+                        dx = float(fpx) - origin_x
+                        dy = float(fpy) - origin_y
+                        dist = dx*dx + dy*dy
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_fpx = fpx
+                            best_fpy = fpy
                         found = True
-                        best_fpx = fpx
-                        best_fpy = fpy
-                        break
+                        n_candidates -= 1
+                        if n_candidates <= 0:
+                            break
 
                 if not found:
                     alive[ci] = 0
@@ -440,13 +449,11 @@ class SubstrateEngine:
         oy_px = self.origin_y
         for _ in range(n_seeds):
             if self.origin_bias > 0:
-                # gaussian spread: at bias=1, sigma = 5% of canvas
-                # at bias=0.5, sigma = 27%, at bias=0, full canvas
-                sigma = max(width, height) * (1.0 - self.origin_bias / 0.04 * 0.95)
-                x = int(self.rng.normal(ox_px, sigma * 0.15))
-                y = int(self.rng.normal(oy_px, sigma * 0.15))
-                x = max(0, min(width - 1, x))
-                y = max(0, min(height - 1, y))
+                # sigma: 0% bias = 50% of canvas, 100% bias = 5% of canvas
+                bias_norm = self.origin_bias / 0.04
+                sigma = max(width, height) * (0.5 - bias_norm * 0.45)
+                x = int(np.clip(self.rng.normal(ox_px, sigma), 0, width - 1))
+                y = int(np.clip(self.rng.normal(oy_px, sigma), 0, height - 1))
             else:
                 x = int(self.rng.integers(0, width))
                 y = int(self.rng.integers(0, height))
