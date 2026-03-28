@@ -258,18 +258,11 @@ def _run_batch(canvas, cgrid, W, H,
                 # - BUT enforces a minimum spread distance so cracks
                 #   don't pile up in one pixel near the origin
                 # n_candidates scales 0%→1 candidate, 100%→20 candidates
-                # origin_bias is in 0-0.04 range, normalize to 0-1 first
                 bias_norm = origin_bias / 0.04
                 n_candidates = 1 + int(bias_norm * 19.0)
 
-                # minimum restart distance from current crack (5% diagonal)
-                # AND minimum distance from origin (grows with bias)
-                # so cracks are forced to spread outward, not pile up
-                canvas_diag = math.sqrt(float(W*W + H*H))
-                min_spread_sq   = (0.05 * canvas_diag) ** 2
-                # at high bias, also enforce a min distance FROM origin
-                # so the origin area doesn't get infinitely subdivided
-                min_origin_dist_sq = (bias_norm * 0.15 * canvas_diag) ** 2
+                # canvas diagonal squared for normalisation
+                canvas_diag_sq = float(W*W + H*H)
 
                 for _t in range(200):
                     s = (s * M1 + M2) & MASK
@@ -281,21 +274,17 @@ def _run_batch(canvas, cgrid, W, H,
                     fpy = int(v * H)
                     if fpy >= H: fpy = H - 1
                     if cgrid[fpy * W + fpx] < 10000:
-                        # reject if too close to current crack position
-                        ddx = float(fpx) - crack_x[ci]
-                        ddy = float(fpy) - crack_y[ci]
-                        if ddx*ddx + ddy*ddy < min_spread_sq:
-                            continue
-                        # reject if too close to origin (prevents infinite subdivision)
-                        odx = float(fpx) - origin_x
-                        ody = float(fpy) - origin_y
-                        if odx*odx + ody*ody < min_origin_dist_sq:
-                            continue
                         dx = float(fpx) - origin_x
                         dy = float(fpy) - origin_y
-                        dist = dx*dx + dy*dy
-                        if dist < best_dist:
-                            best_dist = dist
+                        # normalised distance 0-1
+                        dist = (dx*dx + dy*dy) / canvas_diag_sq
+                        # weighted reservoir: accept this candidate with
+                        # probability = (1 - dist)^2 * bias_norm
+                        # so closer candidates are preferred but not guaranteed
+                        s = (s * M1 + M2) & MASK
+                        rv = float(s >> np.uint64(33)) / 2147483648.0
+                        weight = (1.0 - dist) * (1.0 - dist) * bias_norm
+                        if not found or rv < weight:
                             best_fpx = fpx
                             best_fpy = fpy
                         found = True
